@@ -333,7 +333,7 @@ class TorchHammerSchrodinger(TorchHammerBase):
         """Add Schrödinger-specific options."""
         self.executable_opts.extend([
             '--schrodinger',
-            f'--schrodinger-precision={self.precision}',
+            f'--precision-schrodinger={self.precision}',
             f'--schrodinger-grid-size={self.grid_size}',
             f'--schrodinger-time-steps={self.time_steps}',
             f'--schrodinger-potential={self.potential}',
