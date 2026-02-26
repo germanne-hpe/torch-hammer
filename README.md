@@ -715,11 +715,6 @@ with underscores.
 `dmesg` alongside kernel events.  This is useful for correlating GPU issues
 with Xid/MCE errors.
 
-```bash
-# Grant capability without running as root
-sudo setcap cap_syslog+ep $(which python3)
-./torch-hammer.py --syslog --syslog-dmesg --batched-gemm
-```
 
 If `/dev/kmsg` is unavailable or the process lacks permissions, a warning is
 printed and execution continues with syslog only — **dmesg failure never
