@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>torch-hammer report — test_data.txt</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #f8f7f4;
+    --surface: #ffffff;
+    --surface2: #f1efe8;
+    --border: rgba(0,0,0,0.10);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1a18;
+    --muted: #6b6b65;
+    --hint: #9a9a92;
+    --success: #0f6e56;
+    --success-bg: #e1f5ee;
+    --danger: #a32d2d;
+    --danger-bg: #fcebeb;
+    --warn: #854f0b;
+    --warn-bg: #faeeda;
+    --info: #185fa5;
+    --info-bg: #e6f1fb;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18;
+      --surface: #242422;
+      --surface2: #2c2c2a;
+      --border: rgba(255,255,255,0.10);
+      --border2: rgba(255,255,255,0.18);
+      --text: #e8e6df;
+      --muted: #9a9a92;
+      --hint: #6b6b65;
+      --success: #5dcaa5;
+      --success-bg: #085041;
+      --danger: #f09595;
+      --danger-bg: #791f1f;
+      --warn: #ef9f27;
+      --warn-bg: #633806;
+      --info: #85b7eb;
+      --info-bg: #0c447c;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", "Fira Code", monospace;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  a { color: var(--info); text-decoration: none; }
+
+  .page { max-width: 1100px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* Header */
+  .header { margin-bottom: 2rem; border-bottom: 0.5px solid var(--border2); padding-bottom: 1.25rem; }
+  .header h1 { font-size: 20px; font-weight: 500; letter-spacing: -0.02em; color: var(--text); }
+  .header .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .header .meta span { margin-right: 1.5rem; }
+
+  /* Metric cards */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 2rem; }
+  .metric-card {
+    background: var(--surface2);
+    border-radius: var(--radius);
+    padding: 1rem;
+  }
+  .metric-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .metric-card .value { font-size: 26px; font-weight: 500; letter-spacing: -0.03em; }
+  .metric-card.ok .value { color: var(--success); }
+  .metric-card.bad .value { color: var(--danger); }
+  .metric-card.warn .value { color: var(--warn); }
+
+  /* Section */
+  .section { margin-bottom: 2rem; }
+  .section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.75rem; }
+
+  /* Chart */
+  .chart-wrap {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 1rem; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .chart-canvas-wrap { position: relative; width: 100%; height: 300px; }
+
+  /* Table */
+  .table-wrap {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead tr { background: var(--surface2); }
+  th {
+    text-align: right;
+    padding: 10px 14px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 0.5px solid var(--border2);
+  }
+  th:first-child { text-align: left; }
+  td {
+    padding: 9px 14px;
+    text-align: right;
+    border-bottom: 0.5px solid var(--border);
+    color: var(--text);
+  }
+  td:first-child { text-align: left; }
+  td.host { color: var(--text); font-weight: 500; }
+  td.warn { color: var(--warn); font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  /* Bad nodes */
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: var(--radius);
+    font-weight: 500;
+  }
+  .badge-bad { background: var(--danger-bg); color: var(--danger); }
+
+  /* Inter-node summary */
+  .inter-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .inter-card {
+    background: var(--surface);
+    border: 0.5px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.875rem 1rem;
+  }
+  .inter-card .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 3px; }
+  .inter-card .val { font-size: 14px; font-weight: 500; }
+
+  .mono { font-family: inherit; }
+  .unit { font-size: 11px; color: var(--muted); }
+
+  footer { margin-top: 3rem; font-size: 11px; color: var(--hint); border-top: 0.5px solid var(--border); padding-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <h1>torch-hammer benchmark report</h1>
+    <div class="meta">
+      <span>source: test_data.txt</span>
+      <span>benchmark: Batched GEMM</span>
+      <span>dtype: float64</span>
+      <span>GPU: NVIDIA GH200 120GB</span>
+      <span>unit: GFLOP/s</span>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric-card ok">
+      <div class="label">healthy nodes</div>
+      <div class="value">6</div>
+    </div>
+    <div class="metric-card bad">
+      <div class="label">no results</div>
+      <div class="value">2</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">node-to-node spread</div>
+      <div class="value">2.9%</div>
+    </div>
+    <div class="metric-card warn">
+      <div class="label">worst intra-node spread</div>
+      <div class="value">4.0%</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">mean GFLOP/s per GPU per node</div>
+    <div class="chart-wrap">
+      <div class="legend"><span class="legend-item"><span class="legend-swatch" style="background:#378ADD"></span>GPU 0</span>
+<span class="legend-item"><span class="legend-swatch" style="background:#1D9E75"></span>GPU 1</span>
+<span class="legend-item"><span class="legend-swatch" style="background:#BA7517"></span>GPU 2</span>
+<span class="legend-item"><span class="legend-swatch" style="background:#D4537E"></span>GPU 3</span></div>
+      <div class="chart-canvas-wrap">
+        <canvas id="gpuChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">per-node detail <span class="unit">(mean GFLOP/s)</span></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>node</th>
+            <th>GPU 0</th><th>GPU 1</th><th>GPU 2</th><th>GPU 3</th>
+            <th>node avg</th>
+            <th>intra spread</th>
+            <th>range (GFLOP/s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono host">nid005193</td><td class="mono">44,767</td><td class="mono">45,309</td><td class="mono">45,620</td><td class="mono">45,699</td><td class="mono">45,349</td><td class="mono ">2.1%</td><td class="mono">933</td></tr>
+<tr><td class="mono host">nid005226</td><td class="mono">44,629</td><td class="mono">45,413</td><td class="mono">44,851</td><td class="mono">45,783</td><td class="mono">45,169</td><td class="mono ">2.6%</td><td class="mono">1,154</td></tr>
+<tr><td class="mono host">nid005263</td><td class="mono">45,444</td><td class="mono">45,923</td><td class="mono">45,370</td><td class="mono">45,997</td><td class="mono">45,684</td><td class="mono ">1.4%</td><td class="mono">627</td></tr>
+<tr><td class="mono host">nid005665</td><td class="mono">45,134</td><td class="mono">46,408</td><td class="mono">45,713</td><td class="mono">44,594</td><td class="mono">45,462</td><td class="mono warn">4.0%</td><td class="mono">1,814</td></tr>
+<tr><td class="mono host">nid006442</td><td class="mono">45,652</td><td class="mono">45,529</td><td class="mono">45,112</td><td class="mono">45,218</td><td class="mono">45,378</td><td class="mono ">1.2%</td><td class="mono">541</td></tr>
+<tr><td class="mono host">nid007591</td><td class="mono">44,438</td><td class="mono">43,821</td><td class="mono">44,636</td><td class="mono">44,630</td><td class="mono">44,381</td><td class="mono ">1.8%</td><td class="mono">816</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">inter-node comparison</div>
+    <div class="inter-grid">
+      <div class="inter-card">
+        <div class="lbl">best node</div>
+        <div class="val">nid005263 (45,684 GFLOP/s)</div>
+      </div>
+      <div class="inter-card">
+        <div class="lbl">worst node</div>
+        <div class="val">nid007591 (44,381 GFLOP/s)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">nodes with no results</div>
+    <div><span class="badge badge-bad">nid005976</span> <span class="badge badge-bad">nid006070</span></div>
+  </div>
+
+  <footer>generated by torch-hammer-reporter &nbsp;|&nbsp; nodes: 8 total</footer>
+
+</div>
+
+<script>
+const labels = ["nid005193", "nid005226", "nid005263", "nid005665", "nid006442", "nid007591"];
+const datasets = [{"label": "GPU 0", "data": [44766.5, 44628.7, 45443.7, 45134.4, 45652.4, 44438.1], "backgroundColor": "#378ADD", "borderRadius": 3, "barPercentage": 0.75}, {"label": "GPU 1", "data": [45309.0, 45412.5, 45923.1, 46408.4, 45529.1, 43820.5], "backgroundColor": "#1D9E75", "borderRadius": 3, "barPercentage": 0.75}, {"label": "GPU 2", "data": [45619.7, 44850.7, 45370.5, 45712.7, 45111.9, 44636.1], "backgroundColor": "#BA7517", "borderRadius": 3, "barPercentage": 0.75}, {"label": "GPU 3", "data": [45699.0, 45782.8, 45997.3, 44594.3, 45218.2, 44629.5], "backgroundColor": "#D4537E", "borderRadius": 3, "barPercentage": 0.75}];
+
+new Chart(document.getElementById('gpuChart'), {
+  type: 'bar',
+  data: { labels, datasets },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toLocaleString(undefined, {maximumFractionDigits: 0})} GFLOP/s`
+        }
+      }
+    },
+    scales: {
+      x: {
+        ticks: { font: { family: 'ui-monospace, "SF Mono", monospace', size: 11 }, autoSkip: false },
+        grid: { color: 'rgba(128,128,128,0.08)' }
+      },
+      y: {
+        min: 42000,
+        max: 47500,
+        ticks: {
+          font: { family: 'ui-monospace, "SF Mono", monospace', size: 11 },
+          callback: v => (v/1000).toFixed(0) + 'k'
+        },
+        grid: { color: 'rgba(128,128,128,0.08)' },
+        title: { display: true, text: 'mean GFLOP/s', font: { size: 11 } }
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>
