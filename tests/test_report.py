@@ -3003,3 +3003,184 @@ class TestThermalThrottling:
         finally:
             hr._iteration_data.clear()
             hr._iteration_data.update(old_data)
+
+
+# ---------------------------------------------------------------------------
+# Readiness audit fixes
+# ---------------------------------------------------------------------------
+
+class TestReadinessFixes:
+    """Tests for readiness audit fixes (XSS, _safe_float, _auto_scale_units, etc.)."""
+
+    # -- _auto_scale_units tests (previously zero coverage) --
+
+    def test_auto_scale_gflops_to_tflops(self):
+        """GFLOP/s values above 1000 should be scaled to TFLOP/s."""
+        results = [
+            hr.GPUResult(hostname="node1", gpu=0, gpu_model="H100", serial="S1",
+                         benchmark="Batched GEMM", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=1500.0, mean_val=1600.0,
+                         max_val=1700.0, unit="GFLOP/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+            hr.GPUResult(hostname="node2", gpu=0, gpu_model="H100", serial="S2",
+                         benchmark="Batched GEMM", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=1400.0, mean_val=1500.0,
+                         max_val=1600.0, unit="GFLOP/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+        ]
+        bench_stats = hr.compute_benchmark_stats(results)
+        hr._auto_scale_units(results, bench_stats, {})
+        key = ("Batched GEMM", "float32")
+        assert bench_stats[key].unit == "TFLOP/s"
+        assert results[0].unit == "TFLOP/s"
+        assert abs(results[0].mean_val - 1.6) < 0.01
+        assert abs(results[1].mean_val - 1.5) < 0.01
+
+    def test_auto_scale_no_scale_below_threshold(self):
+        """Values below 1000 should NOT be scaled."""
+        results = [
+            hr.GPUResult(hostname="node1", gpu=0, gpu_model="H100", serial="S1",
+                         benchmark="Batched GEMM", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=500.0, mean_val=600.0,
+                         max_val=700.0, unit="GFLOP/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+        ]
+        bench_stats = hr.compute_benchmark_stats(results)
+        hr._auto_scale_units(results, bench_stats, {})
+        key = ("Batched GEMM", "float32")
+        assert bench_stats[key].unit == "GFLOP/s"
+        assert results[0].mean_val == 600.0
+
+    def test_auto_scale_gbs_to_tbs(self):
+        """GB/s values above 1000 should be scaled to TB/s."""
+        results = [
+            hr.GPUResult(hostname="node1", gpu=0, gpu_model="H100", serial="S1",
+                         benchmark="Memory Traffic", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=2000.0, mean_val=2500.0,
+                         max_val=3000.0, unit="GB/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+        ]
+        bench_stats = hr.compute_benchmark_stats(results)
+        hr._auto_scale_units(results, bench_stats, {})
+        key = ("Memory Traffic", "float32")
+        assert bench_stats[key].unit == "TB/s"
+        assert abs(results[0].mean_val - 2.5) < 0.01
+
+    def test_auto_scale_scales_iteration_data(self):
+        """_auto_scale_units should also scale iteration data."""
+        results = [
+            hr.GPUResult(hostname="node1", gpu=0, gpu_model="H100", serial="S1",
+                         benchmark="Batched GEMM", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=1500.0, mean_val=1600.0,
+                         max_val=1700.0, unit="GFLOP/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+        ]
+        iter_data = {
+            "node1:0:Batched GEMM:float32": [
+                {"iteration": 0, "performance": 1600.0},
+                {"iteration": 1, "performance": 1500.0},
+            ]
+        }
+        bench_stats = hr.compute_benchmark_stats(results)
+        hr._auto_scale_units(results, bench_stats, iter_data)
+        assert abs(iter_data["node1:0:Batched GEMM:float32"][0]["performance"] - 1.6) < 0.01
+
+    def test_auto_scale_non_scalable_unit_unchanged(self):
+        """Units not in _UNIT_UPSCALE (e.g., img/s) should be unchanged."""
+        results = [
+            hr.GPUResult(hostname="node1", gpu=0, gpu_model="H100", serial="S1",
+                         benchmark="Convolution", dtype="float32", iterations=10,
+                         runtime_s=1.0, min_val=5000.0, mean_val=6000.0,
+                         max_val=7000.0, unit="img/s", power_avg_w=300.0,
+                         temp_max_c=70.0),
+        ]
+        bench_stats = hr.compute_benchmark_stats(results)
+        hr._auto_scale_units(results, bench_stats, {})
+        assert results[0].unit == "img/s"
+        assert results[0].mean_val == 6000.0
+
+    # -- _safe_float inf/nan guard tests --
+
+    def test_safe_float_rejects_inf(self):
+        assert hr._safe_float("inf") == 0.0
+        assert hr._safe_float("-inf") == 0.0
+        assert hr._safe_float("infinity") == 0.0
+
+    def test_safe_float_rejects_nan(self):
+        assert hr._safe_float("nan") == 0.0
+
+    def test_safe_float_normal_values_unchanged(self):
+        assert hr._safe_float("42.5") == 42.5
+        assert hr._safe_float("-1.0") == -1.0
+        assert hr._safe_float("0") == 0.0
+
+    # -- INTERACTIVE_RESULT_COLS constant tests --
+
+    def test_interactive_result_cols_is_module_constant(self):
+        """INTERACTIVE_RESULT_COLS should be a module-level constant."""
+        assert hasattr(hr, 'INTERACTIVE_RESULT_COLS')
+        assert isinstance(hr.INTERACTIVE_RESULT_COLS, list)
+        assert "hostname" in hr.INTERACTIVE_RESULT_COLS
+        assert "throttled" in hr.INTERACTIVE_RESULT_COLS
+
+    def test_interactive_result_cols_matches_gpuresult_fields(self):
+        """All INTERACTIVE_RESULT_COLS should be valid GPUResult attribute names."""
+        import dataclasses
+        gpu_fields = {f.name for f in dataclasses.fields(hr.GPUResult)}
+        for col in hr.INTERACTIVE_RESULT_COLS:
+            assert col in gpu_fields, f"{col} not in GPUResult fields"
+
+    # -- XSS escaping tests --
+
+    def test_interactive_report_has_esc_function(self):
+        """Interactive report should include the esc() XSS helper."""
+        from unittest.mock import MagicMock
+        results = _make_results(n_nodes=1, n_gpus=1)
+        bench_stats = hr.compute_benchmark_stats(results)
+        outliers = hr.detect_outliers(bench_stats)
+        old_data = dict(hr._iteration_data)
+        try:
+            hr._iteration_data.clear()
+            with patch.object(hr, '_PLOTLY_AVAILABLE', True):
+                mock_plotly = MagicMock()
+                mock_plotly.get_plotlyjs.return_value = '/* mock */'
+                with patch.object(hr, '_plotly_offline', mock_plotly):
+                    html = hr._render_interactive_html(
+                        results, bench_stats, outliers,
+                        source_name="test", threshold=15.0)
+            assert "function esc(s)" in html
+            assert "esc(r.hostname)" in html
+            assert "esc(r.gpu_model)" in html
+            assert "esc(r.serial)" in html
+        finally:
+            hr._iteration_data.clear()
+            hr._iteration_data.update(old_data)
+
+    def test_interactive_report_escapes_fleet_map_titles(self):
+        """Fleet map mkSquare should use esc() on hostnames."""
+        from unittest.mock import MagicMock
+        results = _make_results(n_nodes=1, n_gpus=1)
+        bench_stats = hr.compute_benchmark_stats(results)
+        outliers = hr.detect_outliers(bench_stats)
+        old_data = dict(hr._iteration_data)
+        try:
+            hr._iteration_data.clear()
+            with patch.object(hr, '_PLOTLY_AVAILABLE', True):
+                mock_plotly = MagicMock()
+                mock_plotly.get_plotlyjs.return_value = '/* mock */'
+                with patch.object(hr, '_plotly_offline', mock_plotly):
+                    html = hr._render_interactive_html(
+                        results, bench_stats, outliers,
+                        source_name="test", threshold=15.0)
+            assert "esc(host)" in html
+        finally:
+            hr._iteration_data.clear()
+            hr._iteration_data.update(old_data)
+
+    # -- Dual outlier detection documentation test --
+
+    def test_detect_outliers_docstring_documents_dual_algorithm(self):
+        """detect_outliers should document the dual algorithm design."""
+        doc = hr.detect_outliers.__doc__
+        assert doc is not None
+        assert "sigma" in doc.lower()

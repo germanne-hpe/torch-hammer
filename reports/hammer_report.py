@@ -40,7 +40,9 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
+import gzip
 import html
 import io
 import json
@@ -127,13 +129,23 @@ SUMMARY_COLS = {
     "power_avg_W", "temp_max_C", "status", "notes",
 }
 
+INTERACTIVE_RESULT_COLS = [
+    "hostname", "gpu", "gpu_model", "serial", "benchmark", "dtype",
+    "mean_val", "min_val", "max_val", "unit", "power_avg_w", "temp_max_c",
+    "sm_util_mean", "mem_bw_util_mean", "gpu_clock_mean",
+    "throttled", "throttle_samples",
+]
+
 _parse_warnings = 0
 
 
 def _safe_float(val, default=0.0):
     # type: (str, float) -> float
     try:
-        return float(val)
+        v = float(val)
+        if math.isfinite(v):
+            return v
+        return default
     except (ValueError, TypeError):
         return default
 
@@ -432,7 +444,6 @@ def load_verbose_log(path):
     """Parse a verbose log-dir file into GPUResult entries."""
     file_gpu, file_hostname, file_serial = _parse_filename_meta(path)
 
-    headers = []       # type: List[List[str]]
     current_cols = []   # type: List[str]
     metric_col = 4      # default column index for the metric
     metric_name = "gflops"
@@ -763,7 +774,15 @@ def _auto_scale_units(results, bench_stats, iteration_data):
 
 def detect_outliers(bench_stats, threshold_pct=15.0):
     # type: (OrderedDict, float) -> List[Dict]
-    """Flag GPUs whose mean deviates > threshold% from fleet mean."""
+    """Flag GPUs whose mean deviates > threshold% from fleet mean.
+
+    Note: the interactive Plotly dashboard uses a different, sigma-based
+    outlier algorithm (mean +/- N*sigma, adjustable via slider).  The two
+    methods intentionally complement each other: this percentage-based
+    approach provides a deterministic, config-driven threshold for CI
+    exit codes, while the sigma-based approach in the dashboard allows
+    interactive exploration with adjustable sensitivity.
+    """
     outliers = []  # type: List[Dict]
     for key, bs in bench_stats.items():
         fleet_m = bs.fleet_mean
@@ -2380,12 +2399,7 @@ def _render_interactive_html(results, bench_stats, outliers, source_name, thresh
     plotly_js = _plotly_offline.get_plotlyjs()
 
     results_data = []
-    _results_cols = [
-        "hostname", "gpu", "gpu_model", "serial", "benchmark", "dtype",
-        "mean_val", "min_val", "max_val", "unit", "power_avg_w", "temp_max_c",
-        "sm_util_mean", "mem_bw_util_mean", "gpu_clock_mean",
-        "throttled", "throttle_samples",
-    ]
+    _results_cols = INTERACTIVE_RESULT_COLS
     for r in results:
         results_data.append([
             r.hostname, r.gpu, r.gpu_model, r.serial,
@@ -2681,11 +2695,9 @@ def _render_interactive_html(results, bench_stats, outliers, source_name, thresh
     # Compress with gzip+base64 to reduce file size (typically 6-8x smaller)
     # and avoid browser JS parser limits with giant JSON literals.
     if has_iteration_data:
-        import gzip as _gzip
-        import base64 as _b64
         _iter_bytes = iteration_json.encode('utf-8')
-        _iter_gz = _gzip.compress(_iter_bytes, compresslevel=6)
-        _iter_b64 = _b64.b64encode(_iter_gz).decode('ascii')
+        _iter_gz = gzip.compress(_iter_bytes, compresslevel=6)
+        _iter_b64 = base64.b64encode(_iter_gz).decode('ascii')
         parts.append('<script id="iter-data-gz" type="application/gzip">'
                      '{}</script>\n'.format(_iter_b64))
         parts.append('<script>\n')
@@ -2711,6 +2723,10 @@ def _render_interactive_html(results, bench_stats, outliers, source_name, thresh
     # Application code in a separate block
     parts.append('<script>\n')
     parts.append("""
+function esc(s) {
+  if (typeof s !== "string") return String(s);
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+}
 var plotConfig = { responsive: true, displaylogo: false,
   modeBarButtonsToRemove: ["lasso2d","select2d"] };
 
@@ -2743,6 +2759,9 @@ function arrStats(arr) {
   return {mean:mean,std:std,min:sorted[0],max:sorted[n-1],median:median};
 }
 function mkOutlierSet() {
+  // Sigma-based outlier detection for interactive exploration.
+  // Complements the percentage-based detect_outliers() in Python
+  // which drives CLI exit codes and static reports.
   var sigma=parseFloat(document.getElementById("outlier-sigma").value)||2;
   var metric=getMetric();
   var vals=RESULTS.map(function(r){return r[metric];}).filter(function(v){return v>0;});
@@ -2892,7 +2911,7 @@ function renderFleetMap() {
     var devPct=val!==null&&st.mean>0?((val-st.mean)/st.mean*100).toFixed(1):"0.0";
     var status=nodeStatus[host]||"normal";
     var border=status==="outlier-low"?"2px solid #f09595":status==="outlier-high"?"2px solid #a78bfa":status==="throttled"?"2px solid #fbbf24":"1px solid rgba(255,255,255,0.06)";
-    var tip=host+(hasNodeMap&&NODE_MAP[host]?" ["+NODE_MAP[host]+"]":"")+
+    var tip=esc(host)+(hasNodeMap&&NODE_MAP[host]?" ["+esc(NODE_MAP[host])+"]":"")+
       "\\n"+(val!=null?val.toFixed(1)+" "+unit:"N/A")+
       "\\n"+devPct+"% vs fleet"+
       (status!=="normal"?"\\n"+status.toUpperCase():"");
@@ -3077,7 +3096,7 @@ function renderDistribution() {
     stripColors.push(statusColor(status));
     var dev=st.mean>0?((v-st.mean)/st.mean*100).toFixed(1):"0.0";
     var statusLabel=status==="outlier-low"?"OUTLIER \u2193":status==="outlier-high"?"OUTLIER \u2191":status==="throttled"?"THROTTLED":"";
-    stripHover.push(r.hostname+" GPU"+r.gpu+"<br>"+v.toFixed(1)+" "+unit+
+    stripHover.push(esc(r.hostname)+" GPU"+r.gpu+"<br>"+v.toFixed(1)+" "+unit+
       "<br>"+dev+"% vs fleet"+(statusLabel?"<br><b>"+statusLabel+"</b>":""));
   });
   var stripTrace = {
@@ -3148,7 +3167,7 @@ function renderEfficiency() {
     colors.push(r.temp_max_c>0?r.temp_max_c:null);
     var status=gpuStatus(r,oSet,tSet);
     var sLabel=status==="outlier-low"?"OUTLIER \u2193":status==="outlier-high"?"OUTLIER \u2191":status==="throttled"?"THROTTLED":"";
-    texts.push(r.hostname+" GPU"+r.gpu+
+    texts.push(esc(r.hostname)+" GPU"+r.gpu+
       "<br>Power: "+r.power_avg_w.toFixed(0)+" W"+
       "<br>"+metricLabel(metric)+": "+v.toFixed(1)+" "+unit+
       "<br>Temp: "+(r.temp_max_c>0?r.temp_max_c.toFixed(0)+"\\u00b0C":"N/A")+
@@ -3244,7 +3263,7 @@ function renderStrip() {
       name:cfg[2],
       hovertext:pts.map(function(p){
         var dev=fleetMean>0?((p.y-fleetMean)/fleetMean*100).toFixed(1):"0.0";
-        return p.host+" GPU"+p.gpu+"<br>"+p.y.toFixed(1)+" "+unit+"<br>"+dev+"% vs fleet";
+        return esc(p.host)+" GPU"+p.gpu+"<br>"+p.y.toFixed(1)+" "+unit+"<br>"+dev+"% vs fleet";
       }),
       hoverinfo:"text",showlegend:true
     });
@@ -3397,8 +3416,8 @@ function renderTimeSeries() {
           x:sx,y:sy,
           type:"scatter",mode:"lines",
           line:{color:statusColor(s.status),width:1.5,dash:s.status==="throttled"?"dash":"solid"},
-          name:s.host+":GPU"+s.gpu+" ("+statusTag+", "+devStr+")",
-          hovertemplate:s.host+" GPU"+s.gpu+"<br>"+metricLabel(metric)+": %{y:.1f} "+unit+"<extra></extra>"
+          name:esc(s.host)+":GPU"+s.gpu+" ("+statusTag+", "+devStr+")",
+          hovertemplate:esc(s.host)+" GPU"+s.gpu+"<br>"+metricLabel(metric)+": %{y:.1f} "+unit+"<extra></extra>"
         });
       });
     } else {
@@ -3450,8 +3469,8 @@ function renderTimeSeries() {
         x:sx,y:sy,
         type:"scatter",mode:"lines",
         line:{color:statusColor(s.status),width:s.status!=="normal"?2:1.2},
-        name:s.host+":GPU"+s.gpu,
-        hovertemplate:s.host+" GPU"+s.gpu+"<br>"+metricLabel(metric)+": %{y:.1f} "+unit+"<extra></extra>"
+        name:esc(s.host)+":GPU"+s.gpu,
+        hovertemplate:esc(s.host)+" GPU"+s.gpu+"<br>"+metricLabel(metric)+": %{y:.1f} "+unit+"<extra></extra>"
       });
     });
   }
@@ -3772,10 +3791,10 @@ function renderInventory() {
     var sc=status==="outlier-low"?"var(--danger)":status==="outlier-high"?"#a78bfa":status==="throttled"?"var(--warn)":"var(--success)";
     var dc=Math.abs(dev)>10?"var(--danger)":Math.abs(dev)>5?"var(--warn)":"var(--muted)";
     h+='<tr>';
-    h+='<td style="text-align:left">'+r.hostname+'</td>';
+    h+='<td style="text-align:left">'+esc(r.hostname)+'</td>';
     h+='<td>'+r.gpu+'</td>';
-    h+='<td style="text-align:left">'+r.gpu_model+'</td>';
-    h+='<td style="text-align:left;font-size:11px">'+r.serial+'</td>';
+    h+='<td style="text-align:left">'+esc(r.gpu_model)+'</td>';
+    h+='<td style="text-align:left;font-size:11px">'+esc(r.serial)+'</td>';
     h+='<td>'+(val>0?val.toFixed(1):"--")+'</td>';
     h+='<td style="color:'+dc+'">'+(dev>=0?"+":"")+dev.toFixed(1)+'%</td>';
     h+='<td>'+(r.power_avg_w>0?r.power_avg_w.toFixed(0)+"W":"--")+'</td>';

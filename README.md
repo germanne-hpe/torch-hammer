@@ -1,8 +1,8 @@
 # Torch Hammer  
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE.md)
-[![Tests](https://img.shields.io/badge/tests-211%20passed-brightgreen.svg)](tests/)
-[![Coverage](https://img.shields.io/badge/coverage-53%25-yellow.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-521%20passed-brightgreen.svg)](tests/)
+[![Coverage](https://img.shields.io/badge/coverage-76%25-green.svg)](tests/)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-1.10+-ee4c2c.svg)](https://pytorch.org/)
 
@@ -43,10 +43,11 @@ When building Torch Hammer, I was inspired by my undergraduate work in quantum c
 7. [Compact Mode](#compact-mode)  
 8. [Syslog Mode](#syslog-mode)  
 9. [Telemetry Back-ends](#telemetry-back-ends)  
-10. [Examples](#examples)  
-11. [Contributing](#contributing)  
-12. [Project Governance](#project-governance)
-13. [License](#license)  
+10. [Reporting](#reporting)  
+11. [Examples](#examples)  
+12. [Contributing](#contributing)  
+13. [Project Governance](#project-governance)
+14. [License](#license)  
 
 ---
 
@@ -792,6 +793,25 @@ aggregate pass/fail counts using the `torch-hammer-mgpu` syslog tag.
 
 ---
 
+## Reporting
+
+`reports/hammer_report.py` aggregates results from multi-node runs into CLI summaries, static HTML reports, or interactive Plotly dashboards. It accepts any torch-hammer output format (compact CSV, summary CSV, JSON, verbose logs, or raw shell captures).
+
+```bash
+# CLI summary with outlier detection
+python reports/hammer_report.py results/ --quiet --outlier-threshold 10
+
+# Static HTML report
+python reports/hammer_report.py results/ -o report.html
+
+# Interactive Plotly dashboard
+python reports/hammer_report.py results/ --interactive -o dashboard.html
+```
+
+See [reports/README.md](reports/README.md) for the full CLI reference, input format details, and chart descriptions.
+
+---
+
 ## Examples
 Run the GEMM test against an NVIDIA GH200 module
 ```
@@ -1108,6 +1128,7 @@ pytest tests/ --cov=. --cov-report=term-missing
 | `test_utilities.py` | Core helpers | Timer, VerbosePrinter, GFLOP calculations |
 | `test_telemetry.py` | Telemetry | Class structure, thread behavior, factory |
 | `test_smoke.py` | Benchmarks | Run each benchmark on CPU with minimal iterations |
+| `test_report.py` | Fleet report | Parsing, stats, outlier detection, HTML/SVG/interactive output, XSS safety, throttling |
 
 ### Writing New Tests
 
