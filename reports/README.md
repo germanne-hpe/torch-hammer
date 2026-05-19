@@ -92,6 +92,7 @@ Use `--shell-output` to force this mode, or let auto-detection handle it.
 | `--node-map` | -- | CSV file mapping `hostname,location` for topology grouping |
 | `--dot-plot` | off | Use dot plots instead of histograms for distribution charts |
 | `--interactive` | off | Generate interactive Plotly dashboard (requires `pip install plotly`) |
+| `--theme` | light | Default theme for generated HTML (`light`, `dark`, `auto`) |
 
 ## Exit Codes
 

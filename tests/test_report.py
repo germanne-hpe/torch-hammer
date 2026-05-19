@@ -561,6 +561,20 @@ class TestHTMLGeneration:
         html_out = hr.render_html(results, stats, [], "test.csv", 15.0)
         assert "#0072B2" in html_out  # first Okabe-Ito color
 
+    def test_html_theme_auto_uses_media_query(self):
+        results = _make_results(n_nodes=1, n_gpus=1)
+        stats = hr.compute_benchmark_stats(results)
+        html_out = hr.render_html(
+            results, stats, [], "test.csv", 15.0, theme_mode="auto")
+        assert "@media (prefers-color-scheme: dark)" in html_out
+
+    def test_html_theme_light_disables_auto_dark(self):
+        results = _make_results(n_nodes=1, n_gpus=1)
+        stats = hr.compute_benchmark_stats(results)
+        html_out = hr.render_html(
+            results, stats, [], "test.csv", 15.0, theme_mode="light")
+        assert "@media (prefers-color-scheme: dark)" not in html_out
+
     def test_fmt_tick_adapts_to_magnitude(self):
         assert "M" in hr._fmt_tick(2_000_000)
         assert "k" in hr._fmt_tick(50_000)
@@ -665,6 +679,20 @@ class TestCLI:
         with patch("sys.argv", ["prog", str(d), "--quiet", "--no-color"]):
             rc = hr.main()
         assert rc == 0
+
+    def test_theme_flag_dark_writes_dark_html(self, tmp_path):
+        rows = [_compact_row(mean=1000)]
+        csv_path = tmp_path / "data.csv"
+        csv_path.write_text(_compact_csv_text(rows))
+
+        html_path = tmp_path / "report.html"
+        with patch("sys.argv", ["prog", str(csv_path), "-o", str(html_path),
+                                "--theme", "dark", "--quiet", "--no-color"]):
+            rc = hr.main()
+        assert rc == 0
+        content = html_path.read_text()
+        assert "@media (prefers-color-scheme: dark)" not in content
+        assert "--bg: #1a1a18" in content
 
 
 # ======================================================================
@@ -2121,6 +2149,30 @@ class TestInteractiveMode:
             assert len(data) == len(results)
             assert data[0]["hostname"] == "node0"
             assert data[0]["benchmark"] == "Batched GEMM"
+        finally:
+            hr._iteration_data.clear()
+            hr._iteration_data.update(old_data)
+
+    def test_interactive_theme_mode_embedded(self):
+        """Interactive HTML embeds CLI-selected theme mode."""
+        from unittest.mock import MagicMock
+        results = _make_results(n_nodes=1, n_gpus=1)
+        stats = hr.compute_benchmark_stats(results)
+
+        old_data = dict(hr._iteration_data)
+        try:
+            hr._iteration_data.clear()
+            with patch.object(hr, '_PLOTLY_AVAILABLE', True):
+                mock_plotly = MagicMock()
+                mock_plotly.get_plotlyjs.return_value = '/* mock */'
+                with patch.object(hr, '_plotly_offline', mock_plotly):
+                    html_out = hr._render_interactive_html(
+                        results, stats, [],
+                        source_name="test.csv", threshold=15.0,
+                        theme_mode="light")
+
+            assert 'var THEME_MODE = "light";' in html_out
+            assert 'function initTheme()' in html_out
         finally:
             hr._iteration_data.clear()
             hr._iteration_data.update(old_data)

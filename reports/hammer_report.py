@@ -2092,8 +2092,9 @@ def _build_bench_section(bench_id, bs, outlier_hosts, threshold, node_map=None,
 
 
 def render_html(results, bench_stats, outliers, source_name, threshold,
-                system_name="", job_name="", node_map=None, dot_plot=False):
-    # type: (List[GPUResult], OrderedDict, List[Dict], str, float, str, str, Optional[Dict[str, str]], bool) -> str
+                system_name="", job_name="", node_map=None, dot_plot=False,
+                theme_mode="auto"):
+    # type: (List[GPUResult], OrderedDict, List[Dict], str, float, str, str, Optional[Dict[str, str]], bool, str) -> str
     """Render full HTML report with one section per (benchmark, dtype)."""
     hosts = sorted(set(r.hostname for r in results))
     gpus = sorted(set((r.hostname, r.gpu) for r in results))
@@ -2181,7 +2182,7 @@ def render_html(results, bench_stats, outliers, source_name, threshold,
         )
 
     # Build page
-    css = _get_css()
+    css = _get_css(theme_mode=theme_mode)
     return (
         '<!DOCTYPE html>\n'
         '<html lang="en">\n'
@@ -2276,9 +2277,34 @@ def render_html(results, bench_stats, outliers, source_name, threshold,
     )
 
 
-def _get_css():
-    # type: () -> str
-    return """
+def _get_css(theme_mode="auto"):
+        # type: (str) -> str
+        if theme_mode == "dark":
+                theme_block = """
+    :root {
+        --bg: #1a1a18; --surface: #242422; --surface2: #2c2c2a;
+        --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
+        --text: #e8e6df; --muted: #9a9a92; --hint: #6b6b65;
+        --success: #5dcaa5; --danger: #f09595; --danger-bg: #451a1a;
+        --warn: #fbbf24; --warn-bg: #422006;
+    }
+"""
+        elif theme_mode == "auto":
+                theme_block = """
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #1a1a18; --surface: #242422; --surface2: #2c2c2a;
+            --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
+            --text: #e8e6df; --muted: #9a9a92; --hint: #6b6b65;
+            --success: #5dcaa5; --danger: #f09595; --danger-bg: #451a1a;
+            --warn: #fbbf24; --warn-bg: #422006;
+        }
+    }
+"""
+        else:
+                theme_block = ""
+
+        return """
   :root {
     --bg: #fafafa; --surface: #ffffff; --surface2: #f5f5f4;
     --border: rgba(0,0,0,0.08); --border2: rgba(0,0,0,0.15);
@@ -2287,15 +2313,7 @@ def _get_css():
     --warn: #92400e; --warn-bg: #fffbeb;
     --radius: 8px; --radius-lg: 12px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #1a1a18; --surface: #242422; --surface2: #2c2c2a;
-      --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
-      --text: #e8e6df; --muted: #9a9a92; --hint: #6b6b65;
-      --success: #5dcaa5; --danger: #f09595; --danger-bg: #451a1a;
-      --warn: #fbbf24; --warn-bg: #422006;
-    }
-  }
+{theme_block}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -2381,7 +2399,7 @@ def _get_css():
   .inner-expand td:first-child { text-align: left; }
   footer { margin-top: 3rem; font-size: 11px; color: var(--hint);
            border-top: 1px solid var(--border); padding-top: 1rem; }
-"""
+""".replace("{theme_block}", theme_block)
 
 
 # ---------------------------------------------------------------------------
@@ -2389,8 +2407,9 @@ def _get_css():
 # ---------------------------------------------------------------------------
 
 def _render_interactive_html(results, bench_stats, outliers, source_name, threshold,
-                             system_name="", job_name="", node_map=None):
-    # type: (List[GPUResult], OrderedDict, List[Dict], str, float, str, str, Optional[Dict[str,str]]) -> str
+                             system_name="", job_name="", node_map=None,
+                             theme_mode="auto"):
+    # type: (List[GPUResult], OrderedDict, List[Dict], str, float, str, str, Optional[Dict[str,str]], str) -> str
     """Render a self-contained interactive HTML dashboard using Plotly.js.
 
     Embeds the full Plotly.js library from the installed pip package via
@@ -2537,7 +2556,7 @@ def _render_interactive_html(results, bench_stats, outliers, source_name, thresh
 
     # Header
     parts.append('  <div class="header">\n')
-    parts.append('    <button id="theme-toggle" onclick="toggleTheme()">light mode</button>\n')
+    parts.append('    <button id="theme-toggle" onclick="toggleTheme()">dark mode</button>\n')
     parts.append('    <h1>Torch Hammer interactive report</h1>\n')
     if system_name or job_name:
         parts.append('    <div class="subtitle">{}</div>\n'.format(_esc(page_title)))
@@ -2690,6 +2709,7 @@ def _render_interactive_html(results, bench_stats, outliers, source_name, thresh
     parts.append('var OUTLIERS = {};\n'.format(outliers_json))
     parts.append('var NODE_MAP = {};\n'.format(node_map_json))
     parts.append('var THRESHOLD = {};\n'.format(threshold))
+    parts.append('var THEME_MODE = {};\n'.format(_safe_json(theme_mode)))
     parts.append('</script>\n')
     # Iteration data in its own block (can be very large).
     # Compress with gzip+base64 to reduce file size (typically 6-8x smaller)
@@ -2827,6 +2847,21 @@ function tAxis(extra) {
 }
 function tAxisTitle(text) {
   return {text:text,font:{size:12,color:themeColors().axis}};
+}
+function initTheme() {
+    var root=document.documentElement;
+    var btn=document.getElementById("theme-toggle");
+    var useLight=false;
+    if (THEME_MODE === "light") {
+        useLight=true;
+    } else if (THEME_MODE === "auto") {
+        var prefersDark=window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        useLight=!prefersDark;
+    }
+    root.classList.toggle("light", useLight);
+    if (btn) {
+        btn.textContent=useLight?"dark mode":"light mode";
+    }
 }
 function toggleTheme() {
   var root=document.documentElement;
@@ -3849,6 +3884,8 @@ document.getElementById("outlier-sigma").addEventListener("input",function(){
 document.getElementById("waterfall-sort").addEventListener("change",function(){renderWaterfall();});
 document.getElementById("waterfall-metric").addEventListener("change",function(){renderWaterfall();});
 document.getElementById("inv-show-all").addEventListener("change",function(){renderInventory();});
+initTheme();
+applyTheme();
 renderAll();
 """)
     parts.append('</script>\n</body>\n</html>\n')
@@ -3895,6 +3932,8 @@ def main():
                    help="Use dot plots instead of histograms for distribution charts")
     p.add_argument("--interactive", action="store_true",
                    help="Generate interactive Plotly dashboard (requires: pip install plotly)")
+    p.add_argument("--theme", choices=["auto", "light", "dark"], default="auto",
+                   help="HTML color theme: auto (follow OS), light, or dark")
     args = p.parse_args()
 
     if args.no_color:
@@ -3964,6 +4003,7 @@ def main():
                 system_name=args.system_name,
                 job_name=args.job_name,
                 node_map=node_map,
+                theme_mode=args.theme,
             )
             if args.output:
                 Path(args.output).write_text(html_out, encoding='utf-8')
@@ -3982,6 +4022,7 @@ def main():
             node_map=node_map,
             job_name=args.job_name,
             dot_plot=args.dot_plot,
+            theme_mode=args.theme,
         )
         out_path = Path(args.output)
         out_path.write_text(html_content, encoding="utf-8")
