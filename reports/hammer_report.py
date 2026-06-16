@@ -3668,11 +3668,6 @@ function renderWaterfall() {
     [0.45,"#00cccc"],[0.60,"#66cc00"],[0.75,"#cccc00"],
     [0.88,"#cc3300"],[0.95,"#ff3300"],[1.00,"#ffffff"]
   ];
-  // For lower-is-better, reverse the scale
-  if(isLowerBetter(wfMetric)){
-    var rev=colorscale.slice().reverse();
-    colorscale=rev.map(function(c,i){return [i/(rev.length-1),c[1]];});
-  }
   // Compute latest-iteration value per column for spectrum trace (top panel).
   // In waterfall convention the spectrum shows the most recent sweep.
   var colLatest=columns.map(function(c){
